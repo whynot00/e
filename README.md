@@ -77,7 +77,7 @@ import (
     "log/slog"
     "os"
 
-    "github.com/yourusername/e"
+    "github.com/whynot00/e"
 )
 
 func main() {
