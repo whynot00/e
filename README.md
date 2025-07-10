@@ -81,12 +81,27 @@ import (
 )
 
 func main() {
-    logger := slog.New(slog.NewJSONHandler(os.Stdout))
+    log := slog.New(slog.NewJSONHandler(os.Stdout))
+    
+    if err := work(); err != nil {
+        log.Error("error occurred", e.SlogGroup(err))
+    }
+    
+}
+
+func work() error {
+    if err := anotherWork(); err != nil {
+        return e.Wrap(err)
+    }
+
+    return nil
+}
+
+func anotherWork() error {
 
     baseErr := errors.New("sql: no rows in result set")
-    err := e.WrapWithMessage(baseErr, "fetching user data failed")
 
-    logger.Error("error occurred", e.SlogGroup(err))
+    return e.WrapWithMessage(baseErr, "fetching user data failed")
 }
 ```
 
@@ -99,9 +114,19 @@ func main() {
     "error_text": "sql: no rows in result set",
     "stack_trace": [
       {
-        "function": "main",
         "file": "/path/to/main.go",
-        "line": 42,
+        "function": "main",
+        "line": 15
+      },
+      {
+        "file": "/path/to/main.go",
+        "function": "work",
+        "line": 22
+      },
+      {
+        "file": "/path/to/main.go",
+        "function": "anotherWork",
+        "line": 32,
         "message": "fetching user data failed"
       }
     ]
