@@ -1,7 +1,9 @@
 package e_test
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/whynot00/e"
@@ -129,5 +131,60 @@ func TestSlogGroup_Nil(t *testing.T) {
 
 	if attr.Key != "error" {
 		t.Errorf("unexpected slog group key: got %s, want error", attr.Key)
+	}
+}
+
+func TestMarshalJSON_SingleFrameWithMessage(t *testing.T) {
+	origErr := errors.New("sql: no rows in result set")
+	wrapped := e.WrapWithMessage(origErr, "fetching user data failed")
+
+	jsonBytes, err := json.Marshal(wrapped)
+	if err != nil {
+		t.Fatalf("failed to marshal error: %v", err)
+	}
+
+	jsonStr := string(jsonBytes)
+
+	if !strings.Contains(jsonStr, `"error":"sql: no rows in result set"`) {
+		t.Errorf("missing original error in JSON: %s", jsonStr)
+	}
+
+	if !strings.Contains(jsonStr, `"message":"fetching user data failed"`) {
+		t.Errorf("missing custom message in JSON: %s", jsonStr)
+	}
+
+	if !strings.Contains(jsonStr, `"file":`) || !strings.Contains(jsonStr, `"function":`) {
+		t.Errorf("missing stack frame info in JSON: %s", jsonStr)
+	}
+}
+
+func TestMarshalJSON_MultipleFrames(t *testing.T) {
+	baseErr := errors.New("unexpected EOF")
+	// Симулируем несколько обёрток
+	wrapped := e.WrapWithMessage(baseErr, "step 3 failed")
+	wrapped = e.WrapWithMessage(wrapped, "step 2 failed")
+	wrapped = e.Wrap(wrapped)
+
+	jsonBytes, err := json.Marshal(wrapped)
+	if err != nil {
+		t.Fatalf("failed to marshal error: %v", err)
+	}
+
+	jsonStr := string(jsonBytes)
+
+	if strings.Count(jsonStr, `"file":`) < 3 {
+		t.Errorf("expected at least 3 stack frames, got: %s", jsonStr)
+	}
+
+	if !strings.Contains(jsonStr, `"error":"unexpected EOF"`) {
+		t.Errorf("missing base error in JSON: %s", jsonStr)
+	}
+}
+
+func TestMarshalJSON_NilError(t *testing.T) {
+	var err error = nil
+
+	if wrapped := e.Wrap(err); wrapped != nil {
+		t.Errorf("expected nil result from Wrap(nil), got non-nil")
 	}
 }

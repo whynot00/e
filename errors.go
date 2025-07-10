@@ -3,6 +3,7 @@
 package e
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"runtime"
@@ -140,4 +141,36 @@ func simplifyFuncName(fn string) string {
 		return fn[i+1:]
 	}
 	return fn
+}
+
+// frameJSON is a public-facing version of frame for JSON serialization.
+type frameJSON struct {
+	File     string `json:"file"`
+	Function string `json:"function"`
+	Line     int    `json:"line"`
+	Message  string `json:"message,omitempty"`
+}
+
+// errorJSON is the structure used for serializing ErrorWrapper.
+type errorJSON struct {
+	Error      string      `json:"error"`
+	StackTrace []frameJSON `json:"stack_trace"`
+}
+
+// MarshalJSON allows ErrorWrapper to be serialized to structured JSON.
+func (e *ErrorWrapper) MarshalJSON() ([]byte, error) {
+	stack := make([]frameJSON, 0, len(e.frames))
+	for _, f := range e.frames {
+		stack = append(stack, frameJSON{
+			File:     f.file,
+			Function: f.funcName,
+			Line:     f.line,
+			Message:  f.message,
+		})
+	}
+
+	return json.Marshal(errorJSON{
+		Error:      e.err.Error(),
+		StackTrace: stack,
+	})
 }
