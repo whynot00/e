@@ -1,5 +1,5 @@
 // Package e provides a lightweight error wrapper with stack trace
-// and structured logging support via slog.Group.
+// and structured logging support via slog.Group and JSON serialization.
 package e
 
 import (
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// frame represents a single stack frame in the error trace.
+// frame represents a single captured stack frame in the trace.
 type frame struct {
 	funcName string
 	file     string
@@ -18,25 +18,15 @@ type frame struct {
 	message  string
 }
 
-// ErrorWrapper wraps an error with a stack trace.
-// It supports error unwrapping and slog-compatible structured logging.
+// ErrorWrapper wraps an error with its stack trace frames and optional messages.
+// It supports error unwrapping, structured logging, and JSON serialization.
 type ErrorWrapper struct {
 	err    error
 	frames []frame
 }
 
-// Error returns the original error message.
-func (e *ErrorWrapper) Error() string {
-	return e.err.Error()
-}
-
-// Unwrap allows ErrorWrapper to be compatible with errors.Is and errors.As.
-func (e *ErrorWrapper) Unwrap() error {
-	return e.err
-}
-
-// Wrap returns a new ErrorWrapper with a captured stack frame.
-// Returns nil if the input error is nil.
+// Wrap returns an ErrorWrapper with the current call site.
+// If the error is already wrapped, the new frame is prepended.
 func Wrap(err error) error {
 	if err == nil {
 		return nil
@@ -44,8 +34,7 @@ func Wrap(err error) error {
 	return wrapWithSkip(err, 2, "")
 }
 
-// WrapWithMessage returns a new ErrorWrapper with a stack frame and a custom message.
-// Returns nil if the input error is nil.
+// WrapWithMessage is like Wrap but also attaches a custom message to the frame.
 func WrapWithMessage(err error, msg string) error {
 	if err == nil {
 		return nil
@@ -53,8 +42,7 @@ func WrapWithMessage(err error, msg string) error {
 	return wrapWithSkip(err, 2, msg)
 }
 
-// wrapWithSkip captures a stack frame at the given skip level.
-// If the error is already an ErrorWrapper, it prepends the new frame.
+// wrapWithSkip captures a stack frame at the given depth.
 func wrapWithSkip(err error, skip int, msg string) *ErrorWrapper {
 	pc, file, line, ok := runtime.Caller(skip)
 	if !ok {
@@ -62,7 +50,7 @@ func wrapWithSkip(err error, skip int, msg string) *ErrorWrapper {
 	}
 	funcName := runtime.FuncForPC(pc).Name()
 
-	newFrame := frame{
+	fr := frame{
 		funcName: simplifyFuncName(funcName),
 		file:     file,
 		line:     line,
@@ -71,18 +59,27 @@ func wrapWithSkip(err error, skip int, msg string) *ErrorWrapper {
 
 	var ew *ErrorWrapper
 	if errors.As(err, &ew) {
-		ew.frames = append([]frame{newFrame}, ew.frames...)
+		ew.frames = append([]frame{fr}, ew.frames...)
 		return ew
 	}
 
 	return &ErrorWrapper{
 		err:    err,
-		frames: []frame{newFrame},
+		frames: []frame{fr},
 	}
 }
 
-// SlogGroup returns a structured slog.Attr with error message and full stack trace.
-// It inserts an additional frame to reflect the log call site.
+// Error returns the wrapped error’s message.
+func (e *ErrorWrapper) Error() string {
+	return e.err.Error()
+}
+
+// Unwrap makes ErrorWrapper compatible with errors.Is and errors.As.
+func (e *ErrorWrapper) Unwrap() error {
+	return e.err
+}
+
+// SlogGroup returns a slog.Group containing structured fields with error and stack trace.
 func SlogGroup(err error) slog.Attr {
 	if err == nil {
 		return slog.Group("error",
@@ -94,21 +91,21 @@ func SlogGroup(err error) slog.Attr {
 	}
 
 	var ew *ErrorWrapper
-	var baseErr error = err
+	var baseErr = err
 	var frames []map[string]any
 
 	if errors.As(err, &ew) {
 		baseErr = ew.err
 		for _, f := range ew.frames {
-			frameMap := map[string]any{
+			entry := map[string]any{
 				"function": f.funcName,
 				"file":     f.file,
 				"line":     f.line,
 			}
 			if f.message != "" {
-				frameMap["message"] = f.message
+				entry["message"] = f.message
 			}
-			frames = append(frames, frameMap)
+			frames = append(frames, entry)
 		}
 	} else {
 		frames = append(frames, map[string]any{
@@ -118,12 +115,11 @@ func SlogGroup(err error) slog.Attr {
 
 	if pc, file, line, ok := runtime.Caller(1); ok {
 		funcName := simplifyFuncName(runtime.FuncForPC(pc).Name())
-		logFrame := map[string]any{
+		frames = append([]map[string]any{{
 			"function": funcName,
 			"file":     file,
 			"line":     line,
-		}
-		frames = append([]map[string]any{logFrame}, frames...)
+		}}, frames...)
 	}
 
 	return slog.Group("error",
@@ -132,32 +128,7 @@ func SlogGroup(err error) slog.Attr {
 	)
 }
 
-// simplifyFuncName trims package prefixes from a function name for readability.
-func simplifyFuncName(fn string) string {
-	if i := strings.LastIndex(fn, "/"); i != -1 {
-		fn = fn[i+1:]
-	}
-	if i := strings.Index(fn, "."); i != -1 {
-		return fn[i+1:]
-	}
-	return fn
-}
-
-// frameJSON is a public-facing version of frame for JSON serialization.
-type frameJSON struct {
-	File     string `json:"file"`
-	Function string `json:"function"`
-	Line     int    `json:"line"`
-	Message  string `json:"message,omitempty"`
-}
-
-// errorJSON is the structure used for serializing ErrorWrapper.
-type errorJSON struct {
-	Error      string      `json:"error"`
-	StackTrace []frameJSON `json:"stack_trace"`
-}
-
-// MarshalJSON allows ErrorWrapper to be serialized to structured JSON.
+// MarshalJSON allows ErrorWrapper to be serialized into structured JSON with full trace.
 func (e *ErrorWrapper) MarshalJSON() ([]byte, error) {
 	stack := make([]frameJSON, 0, len(e.frames))
 	for _, f := range e.frames {
@@ -173,4 +144,29 @@ func (e *ErrorWrapper) MarshalJSON() ([]byte, error) {
 		Error:      e.err.Error(),
 		StackTrace: stack,
 	})
+}
+
+// frameJSON is the exported form of a stack frame used in JSON serialization.
+type frameJSON struct {
+	File     string `json:"file"`
+	Function string `json:"function"`
+	Line     int    `json:"line"`
+	Message  string `json:"message,omitempty"`
+}
+
+// errorJSON is the root structure returned when marshaling ErrorWrapper.
+type errorJSON struct {
+	Error      string      `json:"error"`
+	StackTrace []frameJSON `json:"stack_trace"`
+}
+
+// simplifyFuncName trims package and receiver prefixes from a function name.
+func simplifyFuncName(fn string) string {
+	if i := strings.LastIndex(fn, "/"); i != -1 {
+		fn = fn[i+1:]
+	}
+	if i := strings.Index(fn, "."); i != -1 {
+		return fn[i+1:]
+	}
+	return fn
 }
