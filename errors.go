@@ -157,7 +157,7 @@ type frameJSON struct {
 // errorJSON is the root structure returned when marshaling ErrorWrapper.
 type errorJSON struct {
 	Error      string      `json:"error"`
-	StackTrace []frameJSON `json:"stack_trace"`
+	StackTrace []frameJSON `json:"stack_trace,omitempty"`
 }
 
 // simplifyFuncName trims package and receiver prefixes from a function name.
