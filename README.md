@@ -103,6 +103,7 @@ Example output:
 }
 ```
 
+
 ### Panic recovery
 The package provides helpers for safe panic recovery with optional stack trace capture and structured handling.
 
@@ -172,3 +173,5 @@ func RecoverToChannel(opts *RecoverOpts, errChan chan<- error)
 ```
 Alternative to `Recover` for use in goroutines.
 Recovers from a `panic` and sends the error into the provided channel.
+Returns a `slog.Attr` containing the error message and stack trace as a slog.Group, suitable for structured logging.
+
