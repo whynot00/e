@@ -1,4 +1,6 @@
-# Package e
+# Package e - Error Wrapper for Go
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/whynot00/e.svg)](https://pkg.go.dev/github.com/whynot00/e) [![Go Report Card](https://goreportcard.com/badge/github.com/whynot00/e)](https://goreportcard.com/report/github.com/whynot00/e) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 `e` is a lightweight Go package providing enhanced error wrapping with stack trace capture and structured logging support using Go's `log/slog` package.
 
@@ -101,6 +103,44 @@ Example output:
 }
 ```
 
+
+### Panic recovery
+The package provides helpers for safe panic recovery with optional stack trace capture and structured handling.
+
+```go
+defer e.Recover(nil, func(err error) {
+    log.Println("panic recovered:", err)
+})
+```
+Or send to a channel in a goroutine:
+
+```go
+errCh := make(chan error, 1)
+go func() {
+    defer e.RecoverToChannel(nil, errCh)
+    // potentially panicking code
+}()
+```
+Example output (structured via `slog.Group` or JSON):
+```json
+{
+  "error": "panic: runtime error: index out of range",
+  "stack_trace": [
+    {
+      "file": "/app/service.go",
+      "function": "handleRequest",
+      "line": 87
+    },
+    {
+      "file": "/app/controller.go",
+      "function": "Serve",
+      "line": 45
+    }
+  ]
+}
+```
+Supports `Fatal` termination,`RecoverOnly` suppression, and optional `WithoutStack` mode.
+
 ## API
 ```go
 func Wrap(err error) error
@@ -115,4 +155,23 @@ Wraps an error with a stack frame and attaches a custom message.
 ```go
 func SlogGroup(err error) slog.Attr
 ```
+Returns a `slog.Attr` containing the error message and stack trace as a `slog.Group`, suitable for structured logging.
+
+```go
+func WrapRecovered(opts *RecoverOpts, r any) error
+```
+Wraps a value returned from `recover()` into an `error`, by default capturing a filtered stack trace.
+
+```go
+func Recover(opts *RecoverOpts, callback func(error))
+```
+Intercepts and recovers from a `panic`.
+Wraps the recovered value as an `error` and invokes the provided `callback`.
+
+```go
+func RecoverToChannel(opts *RecoverOpts, errChan chan<- error)
+```
+Alternative to `Recover` for use in goroutines.
+Recovers from a `panic` and sends the error into the provided channel.
 Returns a `slog.Attr` containing the error message and stack trace as a slog.Group, suitable for structured logging.
+
