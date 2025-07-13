@@ -1,4 +1,6 @@
-# Package e
+# Package e - Error Wrapper for Go
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/whynot00/e.svg)](https://pkg.go.dev/github.com/whynot00/e) [![Go Report Card](https://goreportcard.com/badge/github.com/whynot00/e)](https://goreportcard.com/report/github.com/whynot00/e) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 `e` is a lightweight Go package providing enhanced error wrapping with stack trace capture and structured logging support using Go's `log/slog` package.
 
@@ -32,8 +34,8 @@ Wrap with a custom message describing context:
 wrappedErr := e.WrapWithMessage(err, "failed to load user profile")
 ```
 
-Structured logging with slog
-Integrate with log/slog for rich structured logs:
+### Structured logging with slog
+Integrate with `log/slog` for rich structured logs:
 
 ```go
 logger := slog.New(slog.NewJSONHandler(os.Stdout))
@@ -42,7 +44,101 @@ err := e.WrapWithMessage(someError, "additional context")
 
 logger.Error("operation failed", e.SlogGroup(err))
 ```
+Example output:
+```json
+{
+  "level": "error",
+  "msg": "operation failed",
+  "error": {
+    "error_text": "some error message",
+    "stack_trace": [
+      {
+        "file": "/path/to/file.go",
+        "function": "functionName",
+        "line": 42,
+        "message": "additional context"
+      },
+      {
+        "file": "/path/to/other.go",
+        "function": "otherFunction",
+        "line": 10
+      }
+    ]
+  }
+}
+```
 This logs the error message along with a detailed stack trace and custom messages.
+
+### JSON serialization
+Wrapped errors implement `json.Marshaler`, producing structured JSON including error message and stack trace:
+```go
+jsonData, err := json.Marshal(wrappedErr)
+if err != nil {
+    // handle error
+}
+fmt.Println(string(jsonData))
+```
+Example output:
+```json
+{
+  "error": "sql: no rows in result set",
+  "stack_trace": [
+    {
+      "file": "/path/to/main.go",
+      "function": "main",
+      "line": 15
+    },
+    {
+      "file": "/path/to/main.go",
+      "function": "work",
+      "line": 22
+    },
+    {
+      "file": "/path/to/main.go",
+      "function": "anotherWork",
+      "line": 32,
+      "message": "fetching user data failed"
+    }
+  ]
+}
+```
+
+### Panic recovery
+The package provides helpers for safe panic recovery with optional stack trace capture and structured handling.
+
+```go
+defer e.Recover(nil, func(err error) {
+    log.Println("panic recovered:", err)
+})
+```
+Or send to a channel in a goroutine:
+
+```go
+errCh := make(chan error, 1)
+go func() {
+    defer e.RecoverToChannel(nil, errCh)
+    // potentially panicking code
+}()
+```
+Example output (structured via `slog.Group` or JSON):
+```json
+{
+  "error": "panic: runtime error: index out of range",
+  "stack_trace": [
+    {
+      "file": "/app/service.go",
+      "function": "handleRequest",
+      "line": 87
+    },
+    {
+      "file": "/app/controller.go",
+      "function": "Serve",
+      "line": 45
+    }
+  ]
+}
+```
+Supports `Fatal` termination,`RecoverOnly` suppression, and optional `WithoutStack` mode.
 
 ## API
 ```go
@@ -58,72 +154,21 @@ Wraps an error with a stack frame and attaches a custom message.
 ```go
 func SlogGroup(err error) slog.Attr
 ```
-Returns a `slog.Attr` containing the error message and stack trace as a slog.Group, suitable for structured logging.
-
-
-## Example
+Returns a `slog.Attr` containing the error message and stack trace as a `slog.Group`, suitable for structured logging.
 
 ```go
-package main
-
-import (
-    "errors"
-    "log/slog"
-    "os"
-
-    "github.com/whynot00/e"
-)
-
-func main() {
-    log := slog.New(slog.NewJSONHandler(os.Stdout))
-    
-    if err := work(); err != nil {
-        log.Error("error occurred", e.SlogGroup(err))
-    }
-    
-}
-
-func work() error {
-    if err := anotherWork(); err != nil {
-        return e.Wrap(err)
-    }
-
-    return nil
-}
-
-func anotherWork() error {
-
-    baseErr := errors.New("sql: no rows in result set")
-
-    return e.WrapWithMessage(baseErr, "fetching user data failed")
-}
+func WrapRecovered(opts *RecoverOpts, r any) error
 ```
+Wraps a value returned from `recover()` into an `error`, by default capturing a filtered stack trace.
 
-### Output:
-```json
-{
-  "level": "error",
-  "msg": "error occurred",
-  "error": {
-    "error_text": "sql: no rows in result set",
-    "stack_trace": [
-      {
-        "file": "/path/to/main.go",
-        "function": "main",
-        "line": 15
-      },
-      {
-        "file": "/path/to/main.go",
-        "function": "work",
-        "line": 22
-      },
-      {
-        "file": "/path/to/main.go",
-        "function": "anotherWork",
-        "line": 32,
-        "message": "fetching user data failed"
-      }
-    ]
-  }
-}
+```go
+func Recover(opts *RecoverOpts, callback func(error))
 ```
+Intercepts and recovers from a `panic`.
+Wraps the recovered value as an `error` and invokes the provided `callback`.
+
+```go
+func RecoverToChannel(opts *RecoverOpts, errChan chan<- error)
+```
+Alternative to `Recover` for use in goroutines.
+Recovers from a `panic` and sends the error into the provided channel.

@@ -79,6 +79,11 @@ func (e *ErrorWrapper) Unwrap() error {
 	return e.err
 }
 
+// StackTrace returns a copy of the captured stack frames.
+func (e *ErrorWrapper) StackTrace() []frame {
+	return e.frames
+}
+
 // SlogGroup returns a slog.Group containing structured fields with error and stack trace.
 func SlogGroup(err error) slog.Attr {
 	if err == nil {
@@ -113,13 +118,10 @@ func SlogGroup(err error) slog.Attr {
 		})
 	}
 
-	if pc, file, line, ok := runtime.Caller(1); ok {
-		funcName := simplifyFuncName(runtime.FuncForPC(pc).Name())
-		frames = append([]map[string]any{{
-			"function": funcName,
-			"file":     file,
-			"line":     line,
-		}}, frames...)
+	if ew == nil || ew.frames == nil {
+		return slog.Group("error",
+			slog.String("error_text", baseErr.Error()),
+		)
 	}
 
 	return slog.Group("error",
@@ -157,7 +159,7 @@ type frameJSON struct {
 // errorJSON is the root structure returned when marshaling ErrorWrapper.
 type errorJSON struct {
 	Error      string      `json:"error"`
-	StackTrace []frameJSON `json:"stack_trace,omitempty"`
+	StackTrace []frameJSON `json:"stack_trace"`
 }
 
 // simplifyFuncName trims package and receiver prefixes from a function name.
