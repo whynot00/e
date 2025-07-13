@@ -7,16 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"runtime"
-	"strings"
 )
-
-// frame represents a single captured stack frame in the trace.
-type frame struct {
-	funcName string
-	file     string
-	line     int
-	message  string
-}
 
 // ErrorWrapper wraps an error with its stack trace frames and optional messages.
 // It supports error unwrapping, structured logging, and JSON serialization.
@@ -160,15 +151,4 @@ type frameJSON struct {
 type errorJSON struct {
 	Error      string      `json:"error"`
 	StackTrace []frameJSON `json:"stack_trace"`
-}
-
-// simplifyFuncName trims package and receiver prefixes from a function name.
-func simplifyFuncName(fn string) string {
-	if i := strings.LastIndex(fn, "/"); i != -1 {
-		fn = fn[i+1:]
-	}
-	if i := strings.Index(fn, "."); i != -1 {
-		return fn[i+1:]
-	}
-	return fn
 }
