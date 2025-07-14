@@ -178,6 +178,11 @@ func WrapWithMessage(err error, msg string) error
 Wraps an error with a stack frame and attaches a custom message.
 
 ```go
+func WrapWithFields(err error, fields ...Fields) error
+```
+Wraps an error with a stack frame and attaches structured key–value fields for logging or serialization.
+
+```go
 func SlogGroup(err error) slog.Attr
 ```
 Returns a `slog.Attr` containing the error message and stack trace as a `slog.Group`, suitable for structured logging.
