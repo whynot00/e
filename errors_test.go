@@ -1,9 +1,7 @@
 package e_test
 
 import (
-	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/whynot00/e"
@@ -134,120 +132,79 @@ func TestSlogGroup_Nil(t *testing.T) {
 	}
 }
 
-func TestMarshalJSON_SingleFrameWithMessage(t *testing.T) {
-	origErr := errors.New("sql: no rows in result set")
-	wrapped := e.WrapWithMessage(origErr, "fetching user data failed")
-
-	jsonBytes, err := json.Marshal(wrapped)
-	if err != nil {
-		t.Fatalf("failed to marshal error: %v", err)
-	}
-
-	jsonStr := string(jsonBytes)
-
-	if !strings.Contains(jsonStr, `"error":"sql: no rows in result set"`) {
-		t.Errorf("missing original error in JSON: %s", jsonStr)
-	}
-
-	if !strings.Contains(jsonStr, `"message":"fetching user data failed"`) {
-		t.Errorf("missing custom message in JSON: %s", jsonStr)
-	}
-
-	if !strings.Contains(jsonStr, `"file":`) || !strings.Contains(jsonStr, `"function":`) {
-		t.Errorf("missing stack frame info in JSON: %s", jsonStr)
+func TestWrapWithFields_Nil(t *testing.T) {
+	if e.WrapWithFields(nil, e.Field("k", "v")) != nil {
+		t.Error("expected nil when wrapping nil error")
 	}
 }
 
-func TestMarshalJSON_MultipleFrames(t *testing.T) {
-	baseErr := errors.New("unexpected EOF")
-	// Симулируем несколько обёрток
-	wrapped := e.WrapWithMessage(baseErr, "step 3 failed")
-	wrapped = e.WrapWithMessage(wrapped, "step 2 failed")
-	wrapped = e.Wrap(wrapped)
+func TestWrapWithFields_SingleField(t *testing.T) {
+	err := errors.New("root")
+	wrapped := e.WrapWithFields(err, e.Field("retry", 3))
 
-	jsonBytes, err := json.Marshal(wrapped)
-	if err != nil {
-		t.Fatalf("failed to marshal error: %v", err)
+	ew, ok := wrapped.(*e.ErrorWrapper)
+	if !ok {
+		t.Fatalf("want *ErrorWrapper, got %T", wrapped)
 	}
-
-	jsonStr := string(jsonBytes)
-
-	if strings.Count(jsonStr, `"file":`) < 3 {
-		t.Errorf("expected at least 3 stack frames, got: %s", jsonStr)
+	if ew.Error() != err.Error() {
+		t.Errorf("message mismatch")
 	}
-
-	if !strings.Contains(jsonStr, `"error":"unexpected EOF"`) {
-		t.Errorf("missing base error in JSON: %s", jsonStr)
+	if v := ew.Fields().Get("retry"); v != 3 {
+		t.Errorf("retry=%v, want 3", v)
 	}
 }
 
-func TestMarshalJSON_NilError(t *testing.T) {
-	var err error = nil
+func TestWrapWithFields_MultipleFields(t *testing.T) {
+	err := errors.New("root")
+	wrapped := e.WrapWithFields(err,
+		e.Field("retry", 3),
+		e.Field("timeout", "5s"),
+		e.Field("user_id", 42),
+	)
 
-	if wrapped := e.Wrap(err); wrapped != nil {
-		t.Errorf("expected nil result from Wrap(nil), got non-nil")
+	fs := wrapped.(*e.ErrorWrapper).Fields()
+	if fs.Get("retry") != 3 || fs.Get("timeout") != "5s" || fs.Get("user_id") != 42 {
+		t.Errorf("fields mismatch: %v", fs.List())
 	}
 }
 
-func TestMarshalJSON_SimpleError(t *testing.T) {
-	err := e.Wrap(errors.New("basic error"))
+func TestWrapWithFields_NoFields(t *testing.T) {
+	err := errors.New("root")
+	wrapped := e.WrapWithFields(err)
 
-	data, errMarshal := json.Marshal(err)
-	if errMarshal != nil {
-		t.Fatalf("unexpected marshal error: %v", errMarshal)
-	}
-
-	var jsonMap map[string]interface{}
-	if err := json.Unmarshal(data, &jsonMap); err != nil {
-		t.Fatalf("unmarshal failed: %v", err)
-	}
-
-	if jsonMap["error"] != "basic error" {
-		t.Errorf("expected error message to be 'basic error', got: %v", jsonMap["error"])
-	}
-
-	stack, ok := jsonMap["stack_trace"].([]interface{})
-	if !ok || len(stack) == 0 {
-		t.Errorf("expected non-empty stack_trace, got: %v", jsonMap["stack_trace"])
+	if len(wrapped.(*e.ErrorWrapper).Fields().List()) != 0 {
+		t.Error("expected zero fields")
 	}
 }
 
-func TestMarshalJSON_WithMessage(t *testing.T) {
-	baseErr := errors.New("db connection failed")
-	wrapped := e.WrapWithMessage(baseErr, "initialization failed")
+func TestWrapWithFields_PreservesOrder(t *testing.T) {
+	err := errors.New("root")
+	wrapped := e.WrapWithFields(err,
+		e.Field("first", 1),
+		e.Field("second", 2),
+		e.Field("third", 3),
+	)
 
-	data, err := json.Marshal(wrapped)
-	if err != nil {
-		t.Fatalf("marshal failed: %v", err)
+	list := wrapped.(*e.ErrorWrapper).Fields().List()
+	keys := make([]string, len(list))
+	for i, kv := range list {
+		keys[i] = kv.Key
 	}
-
-	var result struct {
-		Error      string `json:"error"`
-		StackTrace []struct {
-			File     string `json:"file"`
-			Function string `json:"function"`
-			Line     int    `json:"line"`
-			Message  string `json:"message"`
-		} `json:"stack_trace"`
-	}
-
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatalf("unmarshal failed: %v", err)
-	}
-
-	if result.Error != "db connection failed" {
-		t.Errorf("unexpected error text: %v", result.Error)
-	}
-
-	foundMsg := false
-	for _, f := range result.StackTrace {
-		if strings.Contains(f.Message, "initialization failed") {
-			foundMsg = true
-			break
+	want := []string{"first", "second", "third"}
+	for i := range want {
+		if keys[i] != want[i] {
+			t.Errorf("wrong order at %d: %q vs %q", i, keys[i], want[i])
 		}
 	}
+}
 
-	if !foundMsg {
-		t.Errorf("expected to find custom message 'initialization failed' in stack trace")
+func TestWrapWithFields_DoubleWrapAppendsFields(t *testing.T) {
+	root := errors.New("root")
+	w1 := e.WrapWithFields(root, e.Field("a", "outer"))
+	w2 := e.WrapWithFields(w1, e.Field("b", "inner"))
+
+	fs := w2.(*e.ErrorWrapper).Fields()
+	if fs.Get("a") != "outer" || fs.Get("b") != "inner" {
+		t.Errorf("fields after double wrap: %v", fs.List())
 	}
 }

@@ -103,6 +103,29 @@ Example output:
 }
 ```
 
+### Custom Fields Support
+You can now attach structured key-value fields to wrapped errors for richer context in logs or serialized output.
+Creating an error with fields:
+```go
+err := someOperation()
+if err != nil {
+    err = e.WrapWithFields(err,
+        e.Field("user_id", 42),
+        e.Field("operation", "database insert"),
+    )
+}
+```
+Example output (structured via `slog.Group` or JSON):
+```json
+{
+  "error": {
+    "error_text": "insert failed",
+    "stack_trace": [...],
+    "user_id": 42,
+    "operation": "database insert"
+  }
+}
+```
 
 ### Panic recovery
 The package provides helpers for safe panic recovery with optional stack trace capture and structured handling.
