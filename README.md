@@ -8,9 +8,11 @@
 
 - Wrap errors with automatic stack trace capture
 - Attach custom contextual messages to errors
+- Add structured key–value fields to errors for additional context
 - Compatible with Go standard library `errors.Is` and `errors.As`
 - Produce structured logs with detailed error trace using `slog.Group`
 - Simplifies function names in stack traces for better readability
+- Recover from panics and convert them into structured errors (with optional stack trace and fatal handling)
 
 ## Installation
 
