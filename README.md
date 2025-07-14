@@ -8,9 +8,11 @@
 
 - Wrap errors with automatic stack trace capture
 - Attach custom contextual messages to errors
+- Add structured key–value fields to errors for additional context
 - Compatible with Go standard library `errors.Is` and `errors.As`
 - Produce structured logs with detailed error trace using `slog.Group`
 - Simplifies function names in stack traces for better readability
+- Recover from panics and convert them into structured errors (with optional stack trace and fatal handling)
 
 ## Installation
 
@@ -103,6 +105,29 @@ Example output:
 }
 ```
 
+### Custom Fields Support
+You can now attach structured key-value fields to wrapped errors for richer context in logs or serialized output.
+Creating an error with fields:
+```go
+err := someOperation()
+if err != nil {
+    err = e.WrapWithFields(err,
+        e.Field("user_id", 42),
+        e.Field("operation", "database insert"),
+    )
+}
+```
+Example output (structured via `slog.Group` or JSON):
+```json
+{
+  "error": {
+    "error_text": "insert failed",
+    "stack_trace": [...],
+    "user_id": 42,
+    "operation": "database insert"
+  }
+}
+```
 
 ### Panic recovery
 The package provides helpers for safe panic recovery with optional stack trace capture and structured handling.
@@ -151,6 +176,11 @@ Wraps an error with a captured stack frame; returns nil if input is nil.
 func WrapWithMessage(err error, msg string) error
 ```
 Wraps an error with a stack frame and attaches a custom message.
+
+```go
+func WrapWithFields(err error, fields ...Fields) error
+```
+Wraps an error with a stack frame and attaches structured key–value fields for logging or serialization.
 
 ```go
 func SlogGroup(err error) slog.Attr
