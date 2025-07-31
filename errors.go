@@ -78,8 +78,20 @@ func wrapWithSkip(err error, skip int, msg string, flds *Fields) *ErrorWrapper {
 
 // SlogGroup returns a slog.Group containing structured fields with error and stack trace.
 func SlogGroup(err error) slog.Attr {
+
+	return slogGroup(err, "error")
+}
+
+// SlogGroup returns a slog.Group containing structured fields with custom name, error and stack trace.
+func SlogGroupNamed(err error, name string) slog.Attr {
+
+	return slogGroup(err, name)
+}
+
+func slogGroup(err error, name string) slog.Attr {
+
 	if err == nil {
-		return slog.Group("error",
+		return slog.Group(name,
 			slog.String("error_text", "nil"),
 			slog.Any("stack_trace", []map[string]any{
 				{"message": "nil"},
