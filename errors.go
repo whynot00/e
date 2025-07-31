@@ -91,7 +91,7 @@ func SlogGroupNamed(err error, name string) slog.Attr {
 func slogGroup(err error, name string) slog.Attr {
 
 	if err == nil {
-		return slog.Group(name,
+		return slog.Group("error",
 			slog.String("error_text", "nil"),
 			slog.Any("stack_trace", []map[string]any{
 				{"message": "nil"},
@@ -141,5 +141,5 @@ func slogGroup(err error, name string) slog.Attr {
 	for i, a := range attrs {
 		anyAttrs[i] = a
 	}
-	return slog.Group("error", anyAttrs...)
+	return slog.Group(name, anyAttrs...)
 }
